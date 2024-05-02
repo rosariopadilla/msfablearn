@@ -1,0 +1,57 @@
+DROP PROCEDURE IF EXISTS dbo.LoadStageTables
+GO
+CREATE PROCEDURE dbo.LoadStageTables
+AS
+BEGIN
+    COPY INTO [stage].[DimDate]
+    FROM 'https://azuresynapsestorage.blob.core.windows.net/sampledata/WideWorldImportersDW/tables/dimension_date.parquet'
+    WITH (FILE_TYPE = 'PARQUET');
+    COPY INTO [stage].[FactSale]
+    FROM 'https://azuresynapsestorage.blob.core.windows.net/sampledata/WideWorldImportersDW/tables/fact_sale.parquet'
+    WITH (FILE_TYPE = 'PARQUET');
+END
+GO
+EXEC dbo.LoadStageTables
+GO
+
+SELECT COUNT(*) AS 'RecordCount', 'stage.DimCity' AS Table_Name FROM stage.DimCity UNION ALL
+SELECT COUNT(*) AS 'RecordCount', 'stage.DimDate' AS Table_Name FROM stage.DimDate UNION ALL
+SELECT COUNT(*) AS 'RecordCount', 'stage.FactSale' AS Table_Name FROM stage.FactSale
+
+DROP PROCEDURE IF EXISTS dbo.LoadDimensionalModel
+GO
+CREATE PROCEDURE dbo.LoadDimensionalModel
+AS
+BEGIN
+    UPDATE dbo.DimCity
+    SET
+        [City] = sdc.[City],
+        [StateProvince] = sdc.[StateProvince],
+        [Country] = sdc.[Country],
+        [Continent] = sdc.[Continent],
+        [SalesTerritory] = sdc.[SalesTerritory],
+        [Region] = sdc.[Region],
+        [Subregion] = sdc.[Subregion],
+        [Location] = sdc.[Location],
+        [LatestRecordedPopulation] = sdc.[LatestRecordedPopulation],
+        [ValidFrom] = sdc.[ValidFrom],
+        [ValidTo] = sdc.[ValidTo],
+        [LineageKey] = sdc.[LineageKey]
+    FROM stage.DimCity AS sdc
+    WHERE dbo.DimCity.CityKey = sdc.CityKey
+    INSERT INTO dbo.DimCity
+    SELECT * FROM stage.DimCity
+    WHERE CityKey NOT IN (SELECT CityKey FROM dbo.DimCity)
+    DELETE FROM dbo.DimDate
+    INSERT INTO dbo.DimDate
+    SELECT * FROM stage.DimDate
+    INSERT INTO dbo.FactSale
+    SELECT * FROM stage.FactSale WHERE SaleKey NOT IN (SELECT SaleKey FROM dbo.FactSale)
+END
+GO
+EXEC dbo.LoadDimensionalModel
+GO
+
+SELECT COUNT(*) AS 'RecordCount', 'dbo.DimCity' AS Table_Name FROM dbo.DimCity UNION ALL
+SELECT COUNT(*) AS 'RecordCount', 'dbo.DimDate' AS Table_Name FROM dbo.DimDate UNION ALL
+SELECT COUNT(*) AS 'RecordCount', 'dbo.FactSale' AS Table_Name FROM dbo.FactSale
